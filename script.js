@@ -227,7 +227,8 @@ async function fetchCurrentLead(leadId) {
 function buildMelissaSearchParams(lead) {
   const first = String(lead?.First_Name || "").trim();
   const last = String(lead?.Last_Name || "").trim();
-  const fullName = lead?.Full_Name ? String(lead.Full_Name).trim() : (first + " " + last).trim();
+  const fullName = (first + " " + last).trim();
+  const birthYear = String(lead?.Year_of_Birth || "").trim();
 
   return {
     first: first,
@@ -289,24 +290,29 @@ function dedupMelissaRows(rows) {
 /* ===============================
  * API CALL (Dynamic URL Builder)
  * =============================== */
+/* ===============================
+ * API CALL (Fixed URL Builder)
+ * =============================== */
 async function callMelissaSearchAPI(params) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
 
   try {
-    const optional = (key, value) => value ? "&" + key + "=" + encodeURIComponent(value) : "";
+    // 1. Base URL
+    let url = PERSONATOR_ENDPOINT + "?id=" + encodeURIComponent(PERSONATOR_LICENSE_KEY) + "&format=JSON&cols=GrpAll,PreviousAddress,DateOfBirth";
     
-    // Dynamic URL: Jo parameter bheja gaya hai, sirf wahi URL me add hoga
-    let url = PERSONATOR_ENDPOINT + "?id=" + encodeURIComponent(PERSONATOR_LICENSE_KEY) + "&format=JSON&cols=GrpAll,PreviousAddress,DateOfBirth" +
-      optional("first", params.first) +
-      optional("last", params.last) +
-      optional("full", params.full) +
-      optional("state", params.state) +
-      optional("postal", params.postal) +
-      optional("email", params.email) +
-      optional("phone", params.phone) +
-      optional("dob", params.birthYear) +
-      "&opt=ReturnAllPages:True,SearchConditions:loose";
+    // 2. Sirf wahi add karo jo is attempt mein exist karta hai
+    if (params.first) url += "&first=" + encodeURIComponent(params.first);
+    if (params.last) url += "&last=" + encodeURIComponent(params.last);
+    if (params.full) url += "&full=" + encodeURIComponent(params.full);
+    if (params.state) url += "&state=" + encodeURIComponent(params.state);
+    if (params.postal) url += "&postal=" + encodeURIComponent(params.postal);
+    if (params.email) url += "&email=" + encodeURIComponent(params.email);
+    if (params.phone) url += "&phone=" + encodeURIComponent(params.phone);
+    if (params.birthYear) url += "&dob=" + encodeURIComponent(params.birthYear);
+    
+    // 3. Loose setting
+    url += "&opt=ReturnAllPages:True,SearchConditions:loose";
 
     console.log("URL Triggered (Masked):", url.replace(/([?&]id=)[^&]+/i, "$1***MASKED***"));
 
