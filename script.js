@@ -594,10 +594,74 @@ function renderPreview(rec) {
   els.previewGrid.innerHTML = fields.map(([label, value]) => `<div class="preview-item"><span class="preview-label">${escapeHtml(label)}</span><span class="preview-value ${value ? "" : "empty"}">${value ? escapeHtml(value) : "—"}</span></div>`).join("");
 }
 
+const GLOBAL_SEARCH_FIELDS = [
+  "melissaRecordLabel",
+  "firstName",
+  "middleName",
+  "lastName",
+  "birthYear",
+  "dataType",
+  "homeAddressStreet",
+  "homeAddressState",
+  "homeAddressCity",
+  "homeAddressZip",
+  "phone",
+  "email",
+];
+
+function normalizeGlobalSearchValue(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactGlobalSearchValue(value) {
+  return normalizeGlobalSearchValue(value).replace(/[^a-z0-9]/g, "");
+}
+
+function recordMatchesGlobalSearch(record, query) {
+  const normalizedQuery = normalizeGlobalSearchValue(query);
+  if (!normalizedQuery) return true;
+
+  const compactQuery = compactGlobalSearchValue(query);
+  const queryDigits = /[a-z]/i.test(normalizedQuery) ? "" : String(query ?? "").replace(/\D/g, "");
+
+  return GLOBAL_SEARCH_FIELDS.some((fieldName) => {
+    const fieldValue = record?.[fieldName] ?? "";
+    const normalizedFieldValue = normalizeGlobalSearchValue(fieldValue);
+
+    if (normalizedFieldValue.includes(normalizedQuery)) return true;
+
+    if (compactQuery) {
+      const compactFieldValue = compactGlobalSearchValue(fieldValue);
+      if (compactFieldValue.includes(compactQuery)) return true;
+    }
+
+    if (queryDigits) {
+      const fieldDigits = String(fieldValue).replace(/\D/g, "");
+      if (fieldDigits.includes(queryDigits)) return true;
+    }
+
+    return false;
+  });
+}
+
+function applyGlobalSearch(query) {
+  const completeDataset = Array.isArray(melissaRecords) ? melissaRecords : [];
+  filteredRecords = completeDataset.filter((record) => recordMatchesGlobalSearch(record, query));
+
+  selectedIndex = -1;
+  selectedMelissaRecord = null;
+  showPreview(false);
+  refreshUpdateButton();
+  renderResults(filteredRecords);
+}
+
 els.filterInput.addEventListener("input", (e) => {
-  const q = (e.target.value || "").trim().toLowerCase();
-  filteredRecords = !q ? [...melissaRecords] : melissaRecords.filter((r) => [r.melissaRecordLabel, r.firstName, r.lastName, r.birthYear, r.dataType, r.homeAddressStreet, r.homeAddressState, r.homeAddressCity, r.homeAddressZip, r.phone, r.email].join(" ").toLowerCase().includes(q));
-  selectedIndex = -1; selectedMelissaRecord = null; showPreview(false); refreshUpdateButton(); renderResults(filteredRecords);
+  applyGlobalSearch(e.target.value || "");
 });
 
 function attachUpdateLeadHandler() {
