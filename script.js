@@ -1,27 +1,11 @@
 /* =============================================================
- * Melissa Personator Search — Lead Update Widget (Ultimate Combined Logic)
- * -------------------------------------------------------------
- * Flow:
- * 1. Zoho SDK PageLoad -> get current Lead ID
- * 2. Fetch current Lead from Zoho CRM (Fresh data)
- * 3. Build Melissa Request (CODE 1 Ladder + CODE 2 Full Name & State)
- * 4. Call Melissa API (SearchConditions:loose, ReturnAllPages:True)
- * 5. Bypass strict JS filters -> Render everything API matched
- * 6. Update Zoho CRM on selection
+ * Melissa Personator Search — Lead Update Widget (8-Condition Ladder)
  * ============================================================= */
 
-/* ===============================
- * CONFIGURATION — EDIT BEFORE GO-LIVE
- * =============================== */
-
-const PERSONATOR_ENDPOINT =
-  "https://personatorsearch.melissadata.net/WEB/doPersonatorSearch";
-
-const PERSONATOR_PROXY_URL = ""; // <-- SET THIS for production
-
+const PERSONATOR_ENDPOINT = "https://personatorsearch.melissadata.net/WEB/doPersonatorSearch";
+const PERSONATOR_PROXY_URL = ""; 
 const PERSONATOR_LICENSE_KEY = "NNyQiGBQttkIhzONLxAqXx**";
-
-const ADDRESS_UPDATE_MODE = "separate"; // "separate" | "compound"
+const ADDRESS_UPDATE_MODE = "separate"; 
 
 const FIELD_API_NAMES = {
   street:       "LOCATION_ADDRESS",
@@ -33,10 +17,6 @@ const FIELD_API_NAMES = {
   yearOfBirth:  "Year_of_Birth",
 };
 
-/* ===============================
- * STATE
- * =============================== */
-
 let sdkReady = false;
 let currentLeadId = null;
 let currentLeadRecord = null;
@@ -47,12 +27,10 @@ let selectedIndex = -1;
 let melissaTableRendered = false;
 let searchLeadRecord = null;
 
-// FORCE CACHE CLEAR: Changed prefix to VCOMBINED to get fresh State and Full Name
-const LEAD_SNAPSHOT_STORAGE_PREFIX = "melissaWidget:leadSearch_VCOMBINED_:";
+// FORCE CACHE CLEAR
+const LEAD_SNAPSHOT_STORAGE_PREFIX = "melissaWidget:leadSearch_V8_:";
 
-function getLeadSnapshotStorageKey(leadId) {
-  return LEAD_SNAPSHOT_STORAGE_PREFIX + String(leadId);
-}
+function getLeadSnapshotStorageKey(leadId) { return LEAD_SNAPSHOT_STORAGE_PREFIX + String(leadId); }
 
 function loadSavedLeadSearchCriteria(leadId) {
   try {
@@ -60,10 +38,7 @@ function loadSavedLeadSearchCriteria(leadId) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : null;
-  } catch (e) {
-    console.warn("loadSavedLeadSearchCriteria failed:", e);
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 function persistLeadSearchCriteria(leadId, leadRecord) {
@@ -82,20 +57,10 @@ function persistLeadSearchCriteria(leadId, leadRecord) {
       Zip_Code:         String(leadRecord?.Zip_Code         || ""),
       State:            String(leadRecord?.State || leadRecord?.LOCATION_ADDRESS_STATE || leadRecord?.Home_Address_State || ""),
     };
-    localStorage.setItem(
-      getLeadSnapshotStorageKey(leadId),
-      JSON.stringify(snapshot)
-    );
+    localStorage.setItem(getLeadSnapshotStorageKey(leadId), JSON.stringify(snapshot));
     return snapshot;
-  } catch (e) {
-    console.warn("persistLeadSearchCriteria failed:", e);
-    return null;
-  }
+  } catch (e) { return null; }
 }
-
-/* ===============================
- * DOM REFERENCES & UI HELPERS
- * =============================== */
 
 const els = {
   banner: document.getElementById("banner"),
@@ -114,20 +79,11 @@ const els = {
   successClose: document.getElementById("successCloseBtn"),
 };
 
-function showBanner(message, type = "info") {
-  els.banner.textContent = message;
-  els.banner.className = `banner banner-${type}`;
-}
-function hideBanner() {
-  els.banner.className = "banner banner-hidden";
-  els.banner.textContent = "";
-}
+function showBanner(message, type = "info") { els.banner.textContent = message; els.banner.className = `banner banner-${type}`; }
+function hideBanner() { els.banner.className = "banner banner-hidden"; els.banner.textContent = ""; }
 function setLoading(isLoading) { els.loading.classList.toggle("hidden", !isLoading); }
 function showEmpty(show) { els.empty.classList.toggle("hidden", !show); }
-function setEmptyMessage(msg) {
-  const p = els.empty.querySelector("p");
-  if (p) p.textContent = msg;
-}
+function setEmptyMessage(msg) { const p = els.empty.querySelector("p"); if (p) p.textContent = msg; }
 function showResults(show) { els.resultsWrap.classList.toggle("hidden", !show); }
 function showPreview(show) { els.previewSec.classList.toggle("hidden", !show); }
 function escapeHtml(str) {
@@ -143,16 +99,12 @@ function refreshUpdateButton() {
 }
 
 /* ===============================
- * ZOHO SDK INIT & SEARCH LADDER
+ * ZOHO SDK INIT & THE 8-STEP LADDER
  * =============================== */
 
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
-  console.log("PageLoad data:", data);
   sdkReady = true;
-
-  try { if (ZOHO?.CRM?.UI?.Resize) ZOHO.CRM.UI.Resize({ height: "1000", width: "1900" }); } 
-  catch (e) { console.warn("Resize failed:", e); }
-
+  try { if (ZOHO?.CRM?.UI?.Resize) ZOHO.CRM.UI.Resize({ height: "1000", width: "1900" }); } catch (e) {}
   if (melissaTableRendered) return;
 
   if (data) {
@@ -160,118 +112,84 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
     else if (data.Entity) currentLeadId = Array.isArray(data.Entity) ? data.Entity[0] : data.Entity;
   }
 
-  if (!currentLeadId) {
-    setLoading(false);
-    showBanner("Current Lead ID not found.", "error");
-    return;
-  }
-
-  els.leadContext.textContent = `Current Lead ID: ${currentLeadId}`;
+  if (!currentLeadId) { setLoading(false); showBanner("Current Lead ID not found.", "error"); return; }
 
   try {
     currentLeadRecord = await fetchCurrentLead(currentLeadId);
-    console.log("Current Lead Data (live CRM):", currentLeadRecord);
-
     const savedCriteria = loadSavedLeadSearchCriteria(currentLeadId);
     if (savedCriteria) searchLeadRecord = savedCriteria;
     else searchLeadRecord = persistLeadSearchCriteria(currentLeadId, currentLeadRecord) || currentLeadRecord;
 
-    // COMBINED LOGIC PARAMS
     const baseParams = buildMelissaSearchParams(searchLeadRecord);
-    console.log("Lead identity for search (Combined Logic):", baseParams);
-
-    if (!baseParams.full && (!baseParams.first || !baseParams.last)) {
-      setLoading(false);
-      setEmptyMessage("Cannot search Melissa: Full Name or First/Last Name is required.");
-      showEmpty(true);
-      return;
-    }
-
-    // CODE 1 LADDER APPROACH + CODE 2 FULL NAME & STATE
+    
+    // -------------------------------------------------------------
+    // EXACTLY 8 CONDITIONS (Original 5 + New 3)
+    // -------------------------------------------------------------
     const searchAttempts = [];
     
+    // 1. first + last + email
     if (baseParams.email) {
-      searchAttempts.push({
-        label: "full + state + email",
-        params: { first: baseParams.first, last: baseParams.last, full: baseParams.full, state: baseParams.state, email: baseParams.email },
-      });
+      searchAttempts.push({ label: "first + last + email", params: { first: baseParams.first, last: baseParams.last, email: baseParams.email } });
     }
-    if (baseParams.phone) {
-      searchAttempts.push({
-        label: "full + state + phone",
-        params: { first: baseParams.first, last: baseParams.last, full: baseParams.full, state: baseParams.state, phone: baseParams.phone },
-      });
-    }
-    if (baseParams.birthYear) {
-      searchAttempts.push({
-        label: "full + state + birth year",
-        params: { first: baseParams.first, last: baseParams.last, full: baseParams.full, state: baseParams.state, birthYear: baseParams.birthYear },
-      });
-    }
+    // 2. first + last + postal(zip)
     if (baseParams.postal) {
-      searchAttempts.push({
-        label: "full + state + postal",
-        params: { first: baseParams.first, last: baseParams.last, full: baseParams.full, state: baseParams.state, postal: baseParams.postal },
-      });
+      searchAttempts.push({ label: "first + last + postal", params: { first: baseParams.first, last: baseParams.last, postal: baseParams.postal } });
     }
-    
-    searchAttempts.push({
-      label: "full + state fallback",
-      params: { first: baseParams.first, last: baseParams.last, full: baseParams.full, state: baseParams.state },
-    });
+    // 3. first + last + phone
+    if (baseParams.phone) {
+      searchAttempts.push({ label: "first + last + phone", params: { first: baseParams.first, last: baseParams.last, phone: baseParams.phone } });
+    }
+    // 4. first + last + birth year
+    if (baseParams.birthYear) {
+      searchAttempts.push({ label: "first + last + birth year", params: { first: baseParams.first, last: baseParams.last, birthYear: baseParams.birthYear } });
+    }
+    // 5. first + last fallback
+    if (baseParams.first && baseParams.last) {
+      searchAttempts.push({ label: "first + last fallback", params: { first: baseParams.first, last: baseParams.last } });
+    }
+    // 6. fullname + state (NEW)
+    if (baseParams.full && baseParams.state) {
+      searchAttempts.push({ label: "fullname + state", params: { full: baseParams.full, state: baseParams.state } });
+    }
+    // 7. first + last + state (NEW)
+    if (baseParams.first && baseParams.last && baseParams.state) {
+      searchAttempts.push({ label: "first + last + state", params: { first: baseParams.first, last: baseParams.last, state: baseParams.state } });
+    }
+    // 8. fullname fallback (NEW)
+    if (baseParams.full) {
+      searchAttempts.push({ label: "fullname fallback", params: { full: baseParams.full } });
+    }
+    // -------------------------------------------------------------
 
     const allRecords = [];
     let licenseIssueDetected = false;
 
     for (const attempt of searchAttempts) {
-      console.log(`Attempt: ${attempt.label}`, attempt.params);
+      console.log(`Running Attempt: ${attempt.label}`, attempt.params);
       let rawResponse = null;
       try {
         rawResponse = await callMelissaSearchAPI(attempt.params);
       } catch (attemptErr) {
-        console.error(`Attempt "${attempt.label}" threw:`, attemptErr);
+        console.error(`Attempt "${attempt.label}" failed:`, attemptErr);
         continue;
       }
 
-      if (hasLicenseError(rawResponse)) {
-        licenseIssueDetected = true;
-        break;
-      }
-
+      if (hasLicenseError(rawResponse)) { licenseIssueDetected = true; break; }
       const recs = Array.isArray(rawResponse?.Records) ? rawResponse.Records : [];
       allRecords.push(...recs);
     }
 
-    if (licenseIssueDetected) {
-      setLoading(false);
-      setEmptyMessage("Melissa license key issue.");
-      showEmpty(true);
-      return;
-    }
+    if (licenseIssueDetected) { setLoading(false); setEmptyMessage("Melissa license key issue."); showEmpty(true); return; }
 
-    // Deduplicate exact same records
-    const uniqueRaw = dedupRawMelissaRecords(allRecords); 
-    
-    // BYPASS STRICT JS FILTER: Accept what the combined API logic found
-    const matchedRaw = uniqueRaw; 
-    
-    console.log("Final rendered records count:", matchedRaw.length);
+    const matchedRaw = dedupRawMelissaRecords(allRecords); 
     setLoading(false);
 
-    if (matchedRaw.length === 0) {
-      setEmptyMessage("No Melissa records found for this combination.");
-      showEmpty(true);
-      return;
-    }
+    if (matchedRaw.length === 0) { setEmptyMessage("No records found in any of the 8 search conditions."); showEmpty(true); return; }
 
     const flattenedMelissaRows = mapMelissaRecords(matchedRaw);
     const uniqueRows = dedupMelissaRows(flattenedMelissaRows);
 
-    if (uniqueRows.length === 0) {
-      setEmptyMessage("No valid address records found to display.");
-      showEmpty(true);
-      return;
-    }
+    if (uniqueRows.length === 0) { setEmptyMessage("No valid address records found to display."); showEmpty(true); return; }
 
     melissaRecords = uniqueRows.map((r) => Object.freeze({ ...r }));
     filteredRecords = melissaRecords.slice();
@@ -297,7 +215,7 @@ function hasLicenseError(response) {
 ZOHO.embeddedApp.init();
 
 /* ===============================
- * FETCH CURRENT LEAD
+ * HELPER FUNCTIONS
  * =============================== */
 
 async function fetchCurrentLead(leadId) {
@@ -305,10 +223,6 @@ async function fetchCurrentLead(leadId) {
   if (resp && resp.data && resp.data.length > 0) return resp.data[0];
   throw new Error("Lead not found in CRM.");
 }
-
-/* ===============================
- * MELISSA SEARCH — INPUT PARAMS (COMBINED LOGIC)
- * =============================== */
 
 function buildMelissaSearchParams(lead) {
   const first = String(lead?.First_Name || "").trim();
@@ -333,10 +247,6 @@ function extractYear(value) {
   return m ? m[0] : "";
 }
 
-/* ===============================
- * NORMALIZATION & DEDUP
- * =============================== */
-
 function normalizeName(value) { return String(value || "").trim().toLowerCase(); }
 function normalizeText(value) { return String(value || "").trim().toLowerCase().replace(/\s+/g, " "); }
 function normalizeZip(value) { return String(value || "").replace(/\D/g, "").slice(0, 5); }
@@ -349,7 +259,6 @@ function normalizePhone(value) {
 function getMelissaUniqueKey(record) {
   const mik = record?.MelissaIdentityKey || record?.melissaIdentityKey || "";
   if (mik) return `mik:${String(mik).trim()}`;
-
   const phones = (record?.PhoneRecords || []).map((p) => normalizePhone((typeof p === "string" ? p : p?.phoneNumber || p?.Phone) || "")).filter(Boolean).sort().join("|");
   const emails = (record?.EmailRecords || []).map((e) => normalizeEmail((typeof e === "string" ? e : e?.email || e?.Email) || "")).filter(Boolean).sort().join("|");
   const fullName = record?.FullName || [ record?.Name?.FirstName || record?.First || "", record?.Name?.MiddleName || record?.Middle || "", record?.Name?.LastName || record?.Last || "" ].map((s) => String(s || "").trim()).filter(Boolean).join(" ");
@@ -378,26 +287,16 @@ function dedupMelissaRows(rows) {
 }
 
 /* ===============================
- * MELISSA SEARCH — API CALL
+ * API CALL (Dynamic URL Builder)
  * =============================== */
-
 async function callMelissaSearchAPI(params) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
 
   try {
-    if (PERSONATOR_PROXY_URL) {
-      const response = await fetch(PERSONATOR_PROXY_URL, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params), signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`Proxy error ${response.status}`);
-      return await response.json();
-    }
-
     const optional = (key, value) => value ? "&" + key + "=" + encodeURIComponent(value) : "";
-
-    // COMBINED URL: Loose + ReturnAllPages + Full Name + State + Other Fields
+    
+    // Dynamic URL: Jo parameter bheja gaya hai, sirf wahi URL me add hoga
     let url = PERSONATOR_ENDPOINT + "?id=" + encodeURIComponent(PERSONATOR_LICENSE_KEY) + "&format=JSON&cols=GrpAll,PreviousAddress,DateOfBirth" +
       optional("first", params.first) +
       optional("last", params.last) +
@@ -409,13 +308,13 @@ async function callMelissaSearchAPI(params) {
       optional("dob", params.birthYear) +
       "&opt=ReturnAllPages:True,SearchConditions:loose";
 
-    console.log("Melissa Search URL (Masked):", url.replace(/([?&]id=)[^&]+/i, "$1***MASKED***"));
+    console.log("URL Triggered (Masked):", url.replace(/([?&]id=)[^&]+/i, "$1***MASKED***"));
 
     const response = await fetch(url, { method: "GET", signal: controller.signal });
     if (!response.ok) throw new Error(`API error ${response.status}`);
     return await response.json();
   } catch (error) {
-    if (error && error.name === "AbortError") throw new Error("Melissa Search timed out.");
+    if (error && error.name === "AbortError") throw new Error("Search timed out.");
     throw error;
   } finally {
     clearTimeout(timeoutId);
@@ -423,7 +322,7 @@ async function callMelissaSearchAPI(params) {
 }
 
 /* ===============================
- * MELISSA SEARCH — RESPONSE MAPPING
+ * RESPONSE MAPPING & UI
  * =============================== */
 
 function toDisplayString(v) {
@@ -469,9 +368,7 @@ function mapMelissaRecords(records) {
 
     const prevAddresses = record.PreviousAddresses || [];
     const phoneOffset = record.CurrentAddress ? 1 : 0;
-    prevAddresses.forEach((addr, i) => {
-      rows.push(buildAddressRow(addr, "Previous Address", allPhones[phoneOffset + i] || "", workingEmails[i] || ""));
-    });
+    prevAddresses.forEach((addr, i) => { rows.push(buildAddressRow(addr, "Previous Address", allPhones[phoneOffset + i] || "", workingEmails[i] || "")); });
 
     const extraPhoneStart = phoneOffset + prevAddresses.length;
     const extraPhones = allPhones.slice(extraPhoneStart);
@@ -487,10 +384,6 @@ function mapMelissaRecords(records) {
   });
   return rows;
 }
-
-/* ===============================
- * RENDER RESULTS TABLE
- * =============================== */
 
 function renderResults(records) {
   els.resultsBody.innerHTML = "";
@@ -522,9 +415,7 @@ function renderResults(records) {
       <td>${escapeHtml(rec.homeAddressZip) || "—"}</td>
       <td>${escapeHtml(rec.phone) || "—"}</td>
       <td>${escapeHtml(rec.email) || "—"}</td>
-      <td class="action-cell">
-        <button class="btn btn-select" data-action="select" data-index="${index}">Select</button>
-      </td>
+      <td class="action-cell"><button class="btn btn-select" data-action="select" data-index="${index}">Select</button></td>
     `;
     tr.addEventListener("click", () => selectRecord(index));
     els.resultsBody.appendChild(tr);
@@ -532,16 +423,10 @@ function renderResults(records) {
   if (selectedIndex >= 0) markSelectedRow(selectedIndex);
 }
 
-/* ===============================
- * UI INTERACTIONS & ZOHO UPDATE
- * =============================== */
-
 function selectRecord(index) {
   const record = filteredRecords[index];
   if (!record) return;
-  if (selectedIndex === index) {
-    selectedIndex = -1; selectedMelissaRecord = null; markSelectedRow(-1); showPreview(false); refreshUpdateButton(); return;
-  }
+  if (selectedIndex === index) { selectedIndex = -1; selectedMelissaRecord = null; markSelectedRow(-1); showPreview(false); refreshUpdateButton(); return; }
   selectedIndex = index; selectedMelissaRecord = record;
   markSelectedRow(index); renderPreview(record); showPreview(true); refreshUpdateButton();
 }
@@ -571,8 +456,7 @@ function attachUpdateLeadHandler() {
   updateLeadBtn = document.getElementById("updateLeadBtn");
   if (updateLeadBtn) updateLeadBtn.addEventListener("click", async function () { await updateLeadRecord(); });
 }
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attachUpdateLeadHandler); 
-else attachUpdateLeadHandler();
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attachUpdateLeadHandler); else attachUpdateLeadHandler();
 
 async function updateLeadRecord() {
   if (!sdkReady || !currentLeadId || !selectedMelissaRecord) { showBanner("Error: Missing selection.", "error"); return; }
@@ -632,12 +516,12 @@ function showSuccessModal(message) {
   modal.classList.remove("hidden"); modal.style.display = "flex";
 }
 
-els.successClose.addEventListener("click", closeWidget);
-els.cancelBtn.addEventListener("click", closeWidget);
+if (els.successClose) els.successClose.addEventListener("click", closeWidget);
+if (els.cancelBtn) els.cancelBtn.addEventListener("click", closeWidget);
 if (els.previewCancelBtn) els.previewCancelBtn.addEventListener("click", function () { selectedIndex = -1; selectedMelissaRecord = null; markSelectedRow(-1); showPreview(false); refreshUpdateButton(); });
 if (els.previewUpdateBtn) els.previewUpdateBtn.addEventListener("click", async function () { await updateLeadRecord(); });
 
 function closeWidget() {
   try { ZOHO.CRM.UI.Popup.closeReload().catch(() => { if (ZOHO.CRM.UI.Popup.close) ZOHO.CRM.UI.Popup.close(); }); } 
-  catch (e) { console.warn("Popup close failed:", e); }
+  catch (e) {}
 }
